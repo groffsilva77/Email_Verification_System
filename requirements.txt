@@ -1,5 +1,5 @@
 fastapi
-genai
+openai
 pypdf
 python-dotenv
 python-multipart
