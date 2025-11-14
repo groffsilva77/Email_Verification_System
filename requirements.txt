@@ -1,5 +1,6 @@
 fastapi
 google-genai
+google-api-core
 pypdf
 python-dotenv
 python-multipart
