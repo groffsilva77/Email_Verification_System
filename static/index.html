@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>AutoClassificador de Emails Financeiros</title>
+        <script src="https://cdn.tailwind.com"></script>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+        <style>
+            body {
+                font-family: 'Inter', sans-serif;
+                background-color: #f0f4f8;
+            }
+            .container-card {
+                box-shadow: 0 10px 25px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            }
+            .produtivo {
+                background-color: #d1fae5;
+                color: #065f46;
+                border-left: 5px solid #10b981;
+            }
+            .improdutivo {
+                background-color: #fee2e2;
+                color: #991b1b;
+                border-left: 5px solid #ef4444;
+            }
+            .loading-ring {
+                border: 4px solid rgba(255, 255, 255, 0.3);
+                border-top: 4px solid #10b981;
+                border-radius: 50%;
+                width: 24px;
+                height: 24px;
+                animation: spin 1s linear infinite;
+            }
+            @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+            }
+        </style>
+    </head>
+    <body class="p-4 md:p-8">
+
+        <div class="mqx-w-4x1 mx-auto">
+            <header class="text-center mb-10">
+                <h1 class="text-3x1 font-bold text-gray-800">AutoClassificador de Emails Financeiros</h1>
+                <p class="text-gray-500 mt-2">Use IA para classificar emails como Produtivos ou Improdutivos e sugerir respostas automáticas</p>
+            </header>
+
+            <main class="grid grid-cols-1 1g:grid-cols-2 gap-8">
+                <div class="bg-white p-6 rounded-x1 container-card">
+                    <h2 class="text-x1 font-semibold mb-4 text-gray-700">Analisar Email</h2>
+
+                    <form id="emailForm" enctype="multipart/form-data" class="space-y-4">
+                        <div>
+                            <label for="email-content" class="block text-sm font-medium text-gray-700 mb-2">Cole o corpo do email aqui:</label>
+                            <textarea id="email-content" name="email-content" rows="8" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition duration-150" placeholder="Ex: Prezado(a), favor me atualizar sobre o status da solicitação #XYZ."></textarea>
+                        </div>
+
+                        <div class="flex items-center space-x-4">
+                            <span class="text-gray-500">OU</span>
+                            <div class="h-px w-full bg-gray-300"></div>
+                        </div>
+
+                        <div>
+                            <label for="file_upload" class="block text-sm font-medium text-gray-700 mb-2">Fazer upload de arquivo (.txt):</label>
+                            <input type="file" id="file_upload" name="file" accept=".txt,.pdf" class="block w-full text-sm text-gray-500
+                              file:mr-4 file:py-2 file:px-4
+                              file:rounded-full file:border-0
+                              file:text-sm file:font-semibold
+                              file:bg-blue-50 file:text-blue-700
+                              hover:file:bg-blue-100"
+                            />
+                        </div>
+
+                        <button type="submit" id="processButton" class="w-full flex justify-center items-center px-4 py-3 border border-transparent text-base font-medium rounded-xl text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-200">
+                            <span id="buttonText">Classificar e Sugerir Resposta</span>
+                            <div id="loadingIndicator" class="loading-ring hidden ml-3"></div>
+                        </button>
+
+                        <p id="errorMessage" class="text-red-600 text-sm mt-3 hidden">Erro ao processar: </p>
+                    </form>
+                </div>
+
+                <div class="bg-white p-6 rounded-x1 container-card lg:sticky lg:tap-8 self-start">
+                    <h2 class="text-x1 font-semibold mb-4 text-gray-700">Resultado da Análise</h2>
+
+                    <div id="resultsContent" class="hidden space-y-4">
+                        <div class="p-4 rounded-lg transition duration-300" id="categoryBox">
+                            <p class="text-sm font-medium">Categoria Atribuída:</p>
+                            <p class="text-2x1 font-bold mt-1" id="categoriaDisplay"></p>
+                        </div>
+
+                        <div class="border border-gray-200 rounded-lg p-4">
+                            <p class="text-sm font-medium text-gray-700 mb-2">Resposta Automática Sugerida:</p>
+                            <textarea id="respostaSugeridaDisplay" rows="6" readonly class="w-full p-2 text-gray-800 bg-gray-50 rounded-lg border-none resize-none"></textarea>
+
+                            <button onclick="copyToClipboard('respostaSugeridaDisplay')" class="mt-3 px-4 py-2 text-sm font-medium rounded-full text-blue-700 bg-blue-100 hover:bg-blue-200 transition duration-150">
+                                Copiar Resposta
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="initialMessage" class="text-center py-10 text-gray-500">
+                        Insira ou faça upload de um email para iniciar a classificação.
+                    </div>
+                </div>
+            </main>
+        </div>
+
+        <script>
+            const form = document.getElementById('emailForm');
+            const processButton = document.getElementById('processButton');
+            const loadingIndicator = document.getElementById('loadingIndicator');
+            const buttonText = document.getElementById('buttonText');
+            const resultsContent = document.getElementById('resultsContent');
+            const initialMessage = document.getElementById('initialMessage');
+            const categoryBox = document.getElementById('categoryBox');
+            const categoriaDisplay = document.getElementById('categoriaDisplay');
+            const respostaSugeridaDisplay = document.getElementById('respostaSugeridaDisplay');
+            const errorMessage = document.getElementById('errorMessage');
+
+            const API_URL = '/api/processar/';
+
+            function copyToClipboard(elementId) {
+                const textarea = document.getElementById(elementId);
+                textarea.select();
+                textarea.setSelectionRange(0, 99999);
+                try {
+                    document.execCommand('copy');
+                    alert('Resposta copiada para a área de transferência!');
+                } catch (err) {
+                    console.error('Falha ao copiar:', err);
+                }
+            }
+
+            function setLoading(isLoading) {
+                processButton.disabled = isLoading;
+                if (isLoading) {
+                    buttonText.textContent = 'Processando...';
+                    loadingIndicator.classList.remove('hidden');
+                    errorMessage.classList.add('hidden');
+                }
+            }
+
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                setLoading(true);
+                resultsContent.classList.add('hidden');
+                initialMessage.classList.remove('hidden');
+
+                const emailContent = document.getElementById('email-content').value.trim();
+                const fileInput = document.getElementById('file_upload').files[0];
+
+                const formData = new FormData();
+
+                if (emailContent) {
+                    formData.append('email_content', emailContent);
+                } else if (fileInput) {
+                    formData.append('file', fileInput);
+                } else {
+                    errorMessage.textContent = 'Erro ao processar: Insira o texto ou selecione um arquivo.';
+                    errorMessage.classList.remove('hidden');
+                    setLoading(false);
+                    return;
+                }
+
+                try {
+                    const response = await fetch(API_URL, {
+                        method: 'POST',
+                        body: formData,
+                    });
+
+                    if (!response.ok) {
+                        const errorJson = await response.json();
+                        throw new Error(errorJson.detail || `Erro HTTP: $(response.status)`);
+                    }
+
+                    const result = await response.json();
+
+                    const categoria = result.categoria || 'Não Classificado';
+                    const resposta = result.resposta_sugerida || 'Não foi possível gerar a resposta.';
+
+                    categoriaDisplay.textContent = categoria.toUpperCase();
+                    respostaSugeridaDisplay.value = resposta;
+
+                    categoryBox.className = 'p-4 rounded-1g transition duration-300';
+                    if (categoria.toLowerCase() === 'produtivo') {
+                        categoryBox.classList.add('produtivo');
+                    } else if (categoria.toLowerCase() === 'improdutivo') {
+                        categoryBox.classList.add('improdutivo');
+                    } else {
+                        categoryBox.classList.add('bg-gray-100', 'text-gray-700');
+                    }
+
+                    resultsContent.classList.remove('hidden');
+                    initialMessage.classList.add('hidden');
+                    errorMessage.classList.add('hidden');
+
+                } catch (error) {
+                    console.error("Erro na comunicação com a API:", error);
+                    errorMessage.textContent = `Erro ao processar: ${error.message}`;
+                    errorMessage.classList.remove('hidden');
+                } finally {
+                    setLoading(false);
+                }
+            });
+        </script>
+    </body>
+</html>

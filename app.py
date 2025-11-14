@@ -1,11 +1,11 @@
+import os
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import Optional
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse
+from pypdf import PdfReader
+import io
 from processor import process_email_with_ai
-
-class EmailData(BaseModel):
-    email_content: Optional[str] = None
 
 app = FastAPI()
 
@@ -18,29 +18,45 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.mount("/static", StaticFiles(directory="static"), name="static")
+@app.get("/", response_class=HTMLResponse)
+async def serve_frontend():
+    """Lê o arquivo index.html e o retorna como uma resposta HTML explícita, forçando o navegador a renderizar."""
+    try:
+        html_path = os.path.join("static", "index.html")
+        with open(html_path, "r", encoding="utf-8") as f:
+            html_content = f.read()
+        return HTMLResponse(content=html_content, status_code=200)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="O arquivo static/index.html não foi encontrado.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao carregar o frontend: {e}")
+
 @app.post("/api/processar")
-async def processar_email_api(data: EmailData):
-    email_text = data.email_content
-
-    if not email_text:
-        raise HTTPException(status_code=400, detail="Nenhum conteúdo de email fornecido para processamento.")
-    resultado = process_email_with_ai(email_text)
-    return resultado
-
-@app.post("/api/processar/upload")
 async def processar_upload_api(file: UploadFile = File(None), email_content: str = Form(None)):
     email_text = ""
 
     if email_content:
         email_text = email_content
-    elif file:
+    elif file and file.filename != '':
         file_extension = file.filename.split('.')[-1].lower()
 
-        if file_extension == 'txt':
+        try:
             content = await file.read()
-            email_text = content.decode('utf-8')
-        else:
-            raise HTTPException(status_code=400, detail="Formato de arquivo não suportado.")
+
+            if file_extension == 'txt':
+                email_text = content.decode('utf-8')
+
+            elif file_extension == 'pdf':
+                email_text = ""
+                pdf_file = io.BytesIO(content)
+                reader = PdfReader(pdf_file)
+                for page in reader.pages:
+                    email_text += page.extract_text() + "\n"
+            else:
+                raise HTTPException(status_code=400, detail="Formato de arquivo não suportado. Use .txt ou .pdf.")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Erro ao ler/processar o arquivo: {e}")
     
     if not email_text:
         raise HTTPException(status_code=400, detail="Nenhum conteúdo de email ou arquivo fornecido para processamento.")

@@ -1,17 +1,31 @@
 import os
 import json
-from openai import OpenAI
+from google import genai
+from google.genai import types
+from google.genai.errors import APIError
 from dotenv import load_dotenv
 
 load_dotenv()
 
-client = OpenAI()
+try:
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError("A variável de ambiente GEMINI_API_KEY não foi encontrada.")
+    
+    client = genai.Client(api_key=api_key)
+
+except Exception as e:
+    print(f"Erro ao inicializar o cliente Gemnini: {e}")
+    client = None
 
 def process_email_with_ai(email_text: str) -> dict:
     """
     Classifica o email em 'Produtivo' ou 'Improdutivo' e sugere uma resposta
     usando a API da OpenAI.
     """
+    if not client:
+        return {"categoria": "Erro de Inicialização", "resposta_sugerida": "O cliente Gemini não foi inicializado. Verifique a chave de API."}
+
     if not email_text:
         return {"categoria": "Erro", "resposta_sugerida": "O texto do email está vazio."}
     
@@ -30,22 +44,34 @@ def process_email_with_ai(email_text: str) -> dict:
     EMAIL:
     {email_text}
     ---
-
-    Retorne a resposta EXCLUSIVAMENTE no formato JSON, sem nenhum texto adicional.
-    JSON SCHEMA: {{"categoria": "CLASSIFICAÇÃO", "resposta_sugerida": "TEXTO DA RESPOSTA"}}
     """
 
+    json_schema = types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "categoria": types.Schema(
+                type=types.Type.STRING,
+                description="Classificação: 'Produtivo' ou 'Improdutivo'."
+            ),
+            "resposta_sugerida": types.Schema(
+                type=types.Type.STRING,
+                description="A resposta concisa e profissional baseada na classificação."
+            )
+        },
+        required=["categoria", "resposta_sugerida"]
+    )
+
     try:
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "Você é um assistente de triagem de email que retorna a saída em JSON."},
-                {"role": "user", "content": prompt}
-            ],
-            response_format={"type": "json_object"}
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[prompt],
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=json_schema,
+            )
         )
 
-        ai_output = response.choices[0].message.content
+        ai_output = response.text
         result_dict = json.loads(ai_output)
 
         return {
@@ -53,6 +79,9 @@ def process_email_with_ai(email_text: str) -> dict:
             "resposta_sugerida": result_dict.get("resposta_sugerida", "Não foi possível gerar a resposta.")
         }
     
+    except APIError as e:
+        print(f"Erro de API do Gemini: {e}")
+        return {"categoria": "Erro de API", "resposta_sugerida": f"Ocorreu um erro na comunicação com o Gemini: {e}"}
     except Exception as e:
-        print(f"Erro em chamada à API: {e}")
+        print(f"Erro em chamada de processamento: {e}")
         return {"categoria": "Erro de AI", "resposta_sugerida": f"Ocorreu um erro no processamento: {e}"}
